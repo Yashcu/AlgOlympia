@@ -22,8 +22,9 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  teams       Team[]       @relation("TeamLeader")
-  memberships TeamMember[]
+  teams         Team[]       @relation("TeamLeader")
+  memberships   TeamMember[]
+  contestsOwned Contest[]    @relation("ContestCreator")
 
   @@index([clerkId])
   @@index([email])
@@ -34,7 +35,7 @@ model Team {
   name       String @unique
   inviteCode String @unique
 
-  leaderId String @unique
+  leaderId String
   leader   User   @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
 
   members   TeamMember[]
@@ -50,8 +51,66 @@ model TeamMember {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  @@unique([userId])
   @@unique([userId, teamId])
   @@index([teamId])
   @@index([userId])
+}
+
+model Contest {
+  id        String        @id @default(cuid())
+  title     String
+  startTime DateTime
+  endTime   DateTime
+  status    ContestStatus @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  createdById String
+  createdBy   User   @relation("ContestCreator", fields: [createdById], references: [id])
+
+  problems Problem[]
+
+  @@index([createdById])
+  @@index([status])
+}
+
+model Problem {
+  id           String   @id @default(cuid())
+  contestId    String
+  title        String
+  index        String
+  description  String              // Problem statement (markdown + LaTeX)
+  inputFormat  String?             // Input specification section
+  outputFormat String?             // Output specification section
+  notes        String?             // Additional notes / constraints
+  timeLimit    Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  contest   Contest    @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  testcases Testcase[]
+
+  @@unique([contestId, index])
+  @@index([contestId])
+}
+
+model Testcase {
+  id        String   @id @default(cuid())
+  problemId String
+  input     String
+  output    String
+  isHidden  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@index([problemId])
+}
+
+enum ContestStatus {
+  DRAFT
+  UPCOMING
+  RUNNING
+  ENDED
 }

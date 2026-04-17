@@ -4,6 +4,7 @@ import SignInPage from "./pages/SignInPage";
 import DashboardLayout from "./layouts/DashboardLayout";
 import TeamPage from "./components/TeamPage";
 import { Toaster } from "react-hot-toast";
+import AdminPage from "./pages/AdminPage";
 
 function App() {
   return (
@@ -32,6 +33,20 @@ function App() {
                 <DashboardLayout>
                   <TeamPage />
                 </DashboardLayout>
+              </SignedIn>
+              <SignedOut>
+                <Navigate to="/signin" replace />
+              </SignedOut>
+            </>
+          }
+        />
+
+        <Route
+          path="/admin"
+          element={
+            <>
+              <SignedIn>
+                <AdminPage />
               </SignedIn>
               <SignedOut>
                 <Navigate to="/signin" replace />

@@ -6,8 +6,10 @@ import helmet from "helmet";
 import compression from "compression";
 
 import { env } from "./config/env";
+
 import userRoutes from "./modules/user/user.routes";
 import teamRoutes from "./modules/team/team.routes";
+import contestRoutes, { participantContestRouter } from "./modules/contest/contest.routes";
 
 import { requireUser } from "./middleware/auth.middleware";
 import { attachUser } from "./middleware/user.middleware";
@@ -116,8 +118,10 @@ app.use(attachUser);
 /* =========================
    Routes
 ========================= */
-app.use("/api/user", apiLimiter, userRoutes);
-app.use("/api/team", apiLimiter, teamRoutes);
+app.use("/api/user",     apiLimiter, userRoutes);
+app.use("/api/team",     apiLimiter, teamRoutes);
+app.use("/api/admin",    apiLimiter, contestRoutes);
+app.use("/api/contests", apiLimiter, participantContestRouter);
 
 /* =========================
    404 Handler

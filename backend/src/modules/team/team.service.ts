@@ -26,7 +26,7 @@ const invalidateTeamCache = async (userIds: string[]) => {
 export const createTeam = async (userId: string, data: { name: string }) => {
     try {
         const team = await prisma.$transaction(async (tx) => {
-            const existingMembership = await tx.teamMember.findUnique({
+            const existingMembership = await tx.teamMember.findFirst({
                 where: { userId },
             });
 
@@ -81,78 +81,75 @@ export const createTeam = async (userId: string, data: { name: string }) => {
 };
 
 /* =========================
-   Join Team
+   Join Team (Concurrency Optimized)
 ========================= */
 export const joinTeam = async (userId: string, inviteCode: string) => {
     let affectedUserIds: string[] = [];
     let teamId: string;
 
-    try {
-        const result = await prisma.$transaction(async (tx) => {
-            const team = await tx.team.findUnique({
-                where: { inviteCode },
-                include: { members: true },
+    const MAX_RETRIES = 3;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const result = await prisma.$transaction(async (tx) => {
+                const team = await tx.team.findUnique({
+                    where: { inviteCode },
+                    include: { members: true },
+                });
+
+                if (!team) {
+                    throw new AppError("Invalid invite code", 400, "INVALID_INVITE_CODE");
+                }
+
+                if (team.members.length >= 3) {
+                    throw new AppError("Team is full", 400, "TEAM_IS_FULL");
+                }
+
+                if (team.members.some((m) => m.userId === userId)) {
+                    throw new AppError("Already in this team", 400, "ALREADY_IN_TEAM");
+                }
+
+                await tx.teamMember.create({
+                    data: {
+                        userId,
+                        teamId: team.id,
+                    },
+                });
+
+                const updatedTeam = await tx.team.findUnique({
+                    where: { id: team.id },
+                    include: { members: { include: { user: true } } },
+                });
+
+                affectedUserIds = [...team.members.map((m) => m.userId), userId];
+                teamId = team.id;
+
+                return updatedTeam;
             });
 
-            if (!team) {
-                throw new AppError(
-                    "Invalid invite code",
-                    400,
-                    "INVALID_INVITE_CODE"
-                );
+            await invalidateTeamCache(affectedUserIds);
+            emitTeamUpdate(teamId!);
+
+            return result;
+
+        } catch (err: any) {
+            if (err.code === "P2034" && attempt < MAX_RETRIES) {
+                console.warn(`[CONCURRENCY] Deadlock caught on joinTeam. Retrying... (Attempt ${attempt})`);
+                const delay = Math.floor(Math.random() * 100 * attempt) + 50;
+                await new Promise((res) => setTimeout(res, delay));
+                continue;
             }
 
-            if (team.members.length >= MAX_TEAM_SIZE) {
-                throw new AppError("Team is full", 400, "TEAM_IS_FULL");
+            if (err.code === "P2002") {
+                throw new AppError("User already in a team", 400, "USER_ALREADY_IN_A_TEAM");
             }
 
-            if (team.members.some((m) => m.userId === userId)) {
-                throw new AppError("Already in this team", 400, "ALREADY_IN_TEAM");
+            if (err.code === "P2034") {
+                throw new AppError("Server is very busy, please click join again", 409, "RETRY_TRANSACTION");
             }
 
-            await tx.teamMember.create({
-                data: {
-                    userId,
-                    teamId: team.id,
-                },
-            });
-
-            const updatedTeam = await tx.team.findUnique({
-                where: { id: team.id },
-                include: { members: { include: { user: true } } },
-            });
-
-            affectedUserIds = [
-                ...team.members.map((m) => m.userId),
-                userId,
-            ];
-            teamId = team.id;
-
-            return updatedTeam;
-        });
-
-        await invalidateTeamCache(affectedUserIds);
-        emitTeamUpdate(teamId!);
-
-        return result;
-    } catch (err: any) {
-        if (err.code === "P2002") {
-            throw new AppError(
-                "User already in a team",
-                400,
-                "USER_ALREADY_IN_A_TEAM"
-            );
+            throw err;
         }
-
-        if (err.code === "P2034") {
-            throw new AppError(
-                "Conflict, please retry",
-                409,
-                "RETRY_TRANSACTION"
-            );
-        }
-
-        throw err;
     }
 };
 
@@ -167,7 +164,7 @@ export const getMyTeam = async (userId: string) => {
         return JSON.parse(cached);
     }
 
-    const membership = await prisma.teamMember.findUnique({
+    const membership = await prisma.teamMember.findFirst({
         where: { userId },
         include: {
             team: {
@@ -209,6 +206,21 @@ export const removeMember = async (
     let teamId: string;
 
     const result = await prisma.$transaction(async (tx) => {
+        const activeContest = await tx.contest.findFirst({
+            where: {
+                startTime: { lte: new Date() },
+                endTime: { gte: new Date() }
+            }
+        });
+
+        if (activeContest) {
+            throw new AppError(
+                "Rosters are locked during an active contest",
+                403,
+                "ROSTER_LOCKED"
+            );
+        }
+
         const team = await tx.team.findFirst({
             where: { leaderId },
             include: { members: true },
@@ -234,7 +246,12 @@ export const removeMember = async (
         }
 
         await tx.teamMember.delete({
-            where: { userId: memberId },
+            where: {
+                userId_teamId: {
+                    userId: memberId,
+                    teamId: team.id
+                }
+            },
         });
 
         const updatedTeam = await tx.team.findUnique({
@@ -262,7 +279,22 @@ export const leaveTeam = async (userId: string) => {
     let teamId: string;
 
     const result = await prisma.$transaction(async (tx) => {
-        const membership = await tx.teamMember.findUnique({
+        const activeContest = await tx.contest.findFirst({
+            where: {
+                startTime: { lte: new Date() },
+                endTime: { gte: new Date() }
+            }
+        });
+
+        if (activeContest) {
+            throw new AppError(
+                "You cannot leave a team during an active contest",
+                403,
+                "ROSTER_LOCKED"
+            );
+        }
+
+        const membership = await tx.teamMember.findFirst({
             where: { userId },
             include: {
                 team: {
@@ -288,7 +320,7 @@ export const leaveTeam = async (userId: string) => {
         }
 
         await tx.teamMember.delete({
-            where: { userId },
+            where: { id: membership.id },
         });
 
         const updatedTeam = await tx.team.findUnique({

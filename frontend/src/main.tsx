@@ -11,8 +11,8 @@ const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: true,
-      staleTime: 10000
+      refetchOnWindowFocus: false,
+      staleTime: 30000
     }
   }
 })

@@ -31,3 +31,7 @@ export async function apiRequest(
 
     return data;
 }
+
+export type ApiError = Error & {
+    code?: string;
+};

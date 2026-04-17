@@ -1,6 +1,8 @@
 import { Server, Socket } from "socket.io";
 import { createClerkClient } from "@clerk/clerk-sdk-node";
 import { prisma } from "../../lib/prisma";
+import { redis } from "../../lib/redis";
+import { logger } from "../../lib/logger";
 
 const clerk = createClerkClient({
     secretKey: process.env.CLERK_SECRET_KEY!,
@@ -8,7 +10,6 @@ const clerk = createClerkClient({
 
 /**
  * Socket.io event handlers for real-time team updates
- * Optimized for 2000+ concurrent connections
  */
 export const registerTeamSocket = (io: Server) => {
     io.use(async (socket, next) => {
@@ -21,17 +22,36 @@ export const registerTeamSocket = (io: Server) => {
         try {
             const payload = await clerk.verifyToken(token);
 
-            const user = await prisma.user.findUnique({
-                where: { clerkId: payload.sub },
-                select: { id: true },
-            });
+            const cacheKey = `user:clerk:${payload.sub}`;
+            const cached = await redis.get(cacheKey);
 
-            if (!user) {
-                return next(new Error("User not found"));
+            let userId: string | null = null;
+
+            if (cached) {
+                try {
+                    // user.service.ts stores the full User object as JSON
+                    // e.g. {"id":"uuid","clerkId":"...","email":"..."}
+                    const parsed = JSON.parse(cached);
+                    userId = parsed.id ?? null;
+                } catch {
+                    // Legacy format: plain userId string (fallback safety)
+                    userId = cached;
+                }
             }
 
-            // attach to socket
-            socket.data.userId = user.id;
+            if (!userId) {
+                // Cache miss — go to DB
+                const user = await prisma.user.findUnique({
+                    where: { clerkId: payload.sub },
+                    select: { id: true },
+                });
+
+                if (!user) return next(new Error("User not found"));
+                userId = user.id;
+            }
+
+            // Attach the plain UUID — NOT the full JSON object
+            socket.data.userId = userId;
 
             next();
         } catch (err) {
@@ -39,40 +59,58 @@ export const registerTeamSocket = (io: Server) => {
         }
     });
 
+
     io.on("connection", (socket: Socket) => {
 
-        const userId = socket.data.userId;
+        const userId = socket.data.userId as string;
 
         if (!userId) {
-            console.warn(`[SOCKET] Connection rejected: missing userId for socket ${socket.id}`);
             socket.disconnect(true);
             return;
         }
 
-        console.log(`[SOCKET] User ${userId} connected (socket: ${socket.id})`);
-
-        // Track user's socket for later broadcasts
-        socket.data.userId = userId;
+        logger.info({ userId, socketId: socket.id }, "Socket connected");
 
         /**
          * Join team room
          * Client emits team ID when they load a team
          */
-        socket.on("join_team", (teamId: string) => {
-            if (!teamId || typeof teamId !== "string") {
-                console.warn(`[SOCKET] Invalid teamId: ${teamId}`);
-                return;
+        socket.on("join_team", async (teamId: string) => {
+            if (!teamId || typeof teamId !== "string") return;
+
+            try {
+                // 1. Check Redis cache first (created by your team.service.ts)
+                const cacheKey = `team:user:${userId}`;
+                let actualTeamId: string | null = null;
+
+                const cachedTeam = await redis.get(cacheKey);
+                if (cachedTeam) {
+                    actualTeamId = JSON.parse(cachedTeam)?.id ?? null;
+                } else {
+                    // 2. Fallback to DB if cache is empty
+                    const membership = await prisma.teamMember.findFirst({
+                        where: { userId }
+                    });
+                    actualTeamId = membership?.teamId ?? null;
+                }
+
+                // 3. The Security Lock
+                if (actualTeamId !== teamId) {
+                    logger.warn({ userId, teamId }, "Socket join_team rejected — not a member");
+                    return; // Silently reject
+                }
+
+                const room = `team:${teamId}`;
+                socket.join(room);
+                logger.info({ userId, room }, "Socket joined room");
+
+                socket.to(room).emit("user:joined", {
+                    userId,
+                    timestamp: new Date().toISOString(),
+                });
+            } catch (error) {
+                logger.error({ error, userId }, "Socket join_team error");
             }
-
-            const roomName = `team:${teamId}`;
-            socket.join(roomName);
-            console.log(`[SOCKET] User ${userId} joined room ${roomName}`);
-
-            // Notify team that user joined
-            socket.to(roomName).emit("user:joined", {
-                userId,
-                timestamp: new Date().toISOString(),
-            });
         });
 
         /**
@@ -83,12 +121,12 @@ export const registerTeamSocket = (io: Server) => {
                 return;
             }
 
-            const roomName = `team:${teamId}`;
-            socket.leave(roomName);
-            console.log(`[SOCKET] User ${userId} left room ${roomName}`);
+            const room = `team:${teamId}`;
+            socket.leave(room);
+            logger.info({ userId, room }, "Socket left room");
 
             // Notify team that user left
-            socket.to(roomName).emit("user:left", {
+            socket.to(room).emit("user:left", {
                 userId,
                 timestamp: new Date().toISOString(),
             });
@@ -99,22 +137,14 @@ export const registerTeamSocket = (io: Server) => {
          * Cleanup on disconnect
          */
         socket.on("disconnect", () => {
-            console.log(`[SOCKET] User ${userId} disconnected (socket: ${socket.id})`);
+            logger.info({ userId, socketId: socket.id }, "Socket disconnected");
         });
 
         /**
          * Error handler
          */
         socket.on("error", (error) => {
-            console.error(`[SOCKET] Error for user ${userId}:`, error);
+            logger.error({ error, userId }, "Socket error");
         });
     });
-
-    // Log socket.io stats periodically
-    setInterval(() => {
-        const sockets = io.engine.clientsCount;
-        const rooms = io.engine.generateId?.length ? io.sockets.adapter.rooms.size : 0;
-
-        console.log(`[SOCKET_STATS] Connected: ${sockets}, Rooms: ${rooms}`);
-    }, 60000); // Every minute
 };

@@ -1,32 +1,10 @@
-import { useAuth } from "@clerk/clerk-react";
-import { useEffect, useState } from "react";
+import { useUserData } from "../hooks/useUserData";
 
 const Profile = () => {
-  const { getToken } = useAuth();
-  const [user, setUser] = useState<any>(null);
+  const { data: user, isLoading, error } = useUserData();
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      const token = await getToken();
-
-      const res = await fetch("http://localhost:5000/api/user/me", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to fetch user");
-      }
-
-      const data = await res.json();
-      setUser(data);
-    };
-
-    fetchUser();
-  }, []);
-
-  if (!user) return <div>Loading...</div>;
+  if (isLoading) return <div>Loading...</div>;
+  if (error || !user) return <div>Error loading profile</div>;
 
   return (
     <div>

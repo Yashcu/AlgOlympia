@@ -21,7 +21,7 @@ export const useTeam = () => {
         },
 
         staleTime: 5 * 60 * 1000,
-        refetchOnWindowFocus: true,
+        refetchOnWindowFocus: false,
         refetchInterval: false,
 
         retry: 1,
