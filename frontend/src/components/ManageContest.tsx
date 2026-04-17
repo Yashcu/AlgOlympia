@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useContests, useUpdateContestStatus } from "../hooks/useAdmin";
+import type { Contest } from "../types/admin";
 import toast from "react-hot-toast";
 import Button from "./ui/Button";
 
@@ -9,7 +10,7 @@ const ManageContest = () => {
 
     const [contestId, setContestId] = useState("");
 
-    const selectedContest = contests?.find((c: any) => c.id === contestId);
+    const selectedContest = contests?.find((c: Contest) => c.id === contestId);
 
     if (isLoading) {
         return (
@@ -78,7 +79,7 @@ const ManageContest = () => {
                             className={selectClasses}
                         >
                             <option value="">Select a contest...</option>
-                            {contests?.map((c: any) => (
+                            {contests?.map((c: Contest) => (
                                 <option key={c.id} value={c.id}>
                                     {c.title}
                                 </option>

@@ -4,6 +4,7 @@ import {
     useContests,
     useProblems,
 } from "../hooks/useAdmin";
+import type { Contest, Problem } from "../types/admin";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import toast from "react-hot-toast";
@@ -82,7 +83,7 @@ const AddTestcase = () => {
                             className={`${inputClasses} appearance-none cursor-pointer`}
                         >
                             <option value="">Select Contest</option>
-                            {contests?.map((c: any) => (
+                            {contests?.map((c: Contest) => (
                                 <option key={c.id} value={c.id}>{c.title}</option>
                             ))}
                         </select>
@@ -99,7 +100,7 @@ const AddTestcase = () => {
                             className={`${inputClasses} appearance-none cursor-pointer disabled:cursor-not-allowed`}
                         >
                             <option value="">Select Problem</option>
-                            {problems?.map((p: any) => (
+                            {problems?.map((p: Problem) => (
                                 <option key={p.id} value={p.id}>
                                     {p.index} - {p.title}
                                 </option>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAddProblem, useContests } from "../hooks/useAdmin";
+import type { Contest } from "../types/admin";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 import toast from "react-hot-toast";
@@ -177,7 +178,7 @@ const AddProblem = () => {
                                 className={`${inputClasses} appearance-none cursor-pointer`}
                             >
                                 <option value="" disabled>Select contest...</option>
-                                {contests?.map((c: any) => (
+                                {contests?.map((c: Contest) => (
                                     <option key={c.id} value={c.id}>{c.title}</option>
                                 ))}
                             </select>

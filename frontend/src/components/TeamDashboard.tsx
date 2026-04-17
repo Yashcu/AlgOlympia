@@ -28,7 +28,7 @@ export default function TeamDashboard({
             queryClient.invalidateQueries({ queryKey: ["team"] });
             toast.success("Member removed");
         },
-        onError: (e: any) => {
+        onError: (e: Error) => {
             toast.error(e.message);
         }
     });
@@ -42,7 +42,7 @@ export default function TeamDashboard({
             queryClient.invalidateQueries({ queryKey: ["team"] });
             toast.success("Left team");
         },
-        onError: (e: any) => {
+        onError: (e: Error) => {
             toast.error(e.message);
         }
     });
@@ -56,7 +56,7 @@ export default function TeamDashboard({
             await queryClient.invalidateQueries({ queryKey: ["team"] });
             toast.success("Team deleted");
         },
-        onError: (e: any) => {
+        onError: (e: Error) => {
             toast.error(e.message);
         }
     });
