@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -17,37 +12,46 @@ enum Role {
 }
 
 model User {
-  id         String      @id @default(uuid())
-  clerkId    String      @unique
-  email      String      @unique
-  name       String?
-  avatar     String?
-  role       Role        @default(USER)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  teams      Team[]
-  teamMember TeamMember?
+  id        String   @id @default(uuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  avatar    String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  teams       Team[]       @relation("TeamLeader")
+  memberships TeamMember[]
 
   @@index([clerkId])
+  @@index([email])
 }
 
 model Team {
-  id         String       @id @default(uuid())
-  name       String
-  inviteCode String       @unique
-  leaderId   String
-  leader     User         @relation(fields: [leaderId], references: [id])
-  members    TeamMember[]
-  createdAt  DateTime     @default(now())
+  id         String @id @default(uuid())
+  name       String @unique
+  inviteCode String @unique
+
+  leaderId String @unique
+  leader   User   @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+
+  members   TeamMember[]
+  createdAt DateTime     @default(now())
 }
 
 model TeamMember {
-  id     String @id @default(uuid())
+  id String @id @default(uuid())
+
   userId String
   teamId String
 
-  user User @relation(fields: [userId], references: [id])
-  team Team @relation(fields: [teamId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@unique([userId])
+  @@unique([userId, teamId])
+  @@index([teamId])
+  @@index([userId])
 }

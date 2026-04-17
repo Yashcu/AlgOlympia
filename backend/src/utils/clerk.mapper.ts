@@ -6,15 +6,22 @@ type ClerkUser = {
 };
 
 export const mapClerkUser = (clerkUser: ClerkUser) => {
-    const email = clerkUser.emailAddresses[0]?.emailAddress;
+    const primaryEmail = clerkUser.emailAddresses?.find(
+        (e) => e.emailAddress
+    )?.emailAddress;
 
-    if (!email) {
+    if (!primaryEmail) {
         throw new Error("User email not found in Clerk");
     }
 
+    const name =
+        [clerkUser.firstName, clerkUser.lastName]
+            .filter(Boolean)
+            .join(" ") || null;
+
     return {
-        email,
-        name: `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim(),
+        email: primaryEmail,
+        name,
         avatar: clerkUser.imageUrl || null,
     };
 };
